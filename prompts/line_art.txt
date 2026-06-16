@@ -1,0 +1,25 @@
+Look at the person in the photo to understand who they are. Then draw them as a minimalist casual character illustration — do NOT trace or convert the photo edges. Think of it as drawing a quick gestural sketch inspired by this person, not a portrait.
+
+Subject identity to capture (only these matter):
+- Gender and approximate age impression
+- Hairstyle character (short/long, wavy/straight, parted or not)
+- Clothing type and color (e.g. black t-shirt, light hoodie — dark clothing becomes solid black fill)
+- Body pose and framing
+
+How to draw — use the absolute minimum strokes:
+- Entire body outline: one single flowing contour line, no more
+- Clothing: outer silhouette only; 2-4 interior lines for a collar or major fold; ignore all seams, textures, and minor wrinkles
+- Hair: 3-5 strokes for the overall shape; 2-3 loose interior lines for volume; do NOT draw individual strands
+- Face: exactly 4-6 marks total — two small curved lines or dots for eyes, one tiny stroke for nose, one short line for mouth; nothing else; no jaw outline, no ear detail
+- Hands: 2-3 abstract lines suggesting shape; omit individual fingers unless the hand is the clear focus of the pose
+- If you find yourself drawing more than 15 strokes for any single body region, you are drawing too much — stop and simplify
+
+Visual style:
+- Image aspect ratio must be exactly 1:1 (square)
+- Pure black ink on pure white background
+- Medium-thick line weight, brush-pen quality, with natural slight variation — not a uniform hairline
+- No shading, no hatching, no gray fill, no color whatsoever
+- Solid black fill only where the original clothing is visibly dark/black
+- Pure white background, completely empty
+
+The final image should look like a casual lifestyle avatar illustration — the kind shared as social media profile pictures — drawn in under 3 minutes by a confident illustrator. The total number of strokes across the whole figure should be under 50. If it looks like a sketch portrait or a detailed comic panel, it has too much detail.

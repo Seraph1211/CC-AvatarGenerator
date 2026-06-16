@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CC-Avatar - 线条头像生成器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drop-zone { border: 2px dashed #d1d5db; border-radius: 0.5rem; padding: 1rem; text-align: center; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
+        .drop-zone:hover, .drop-zone.dragover { border-color: #3b82f6; background-color: #eff6ff; }
+        .drop-zone.uploaded { border-color: #22c55e; background-color: #f0fdf4; border-style: solid; }
+        .spinner { animation: spin 1s linear infinite; height: 2rem; width: 2rem; border: 4px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+        .hidden { display: none; }
+        #toast.show { display: block; animation: toastIn 0.25s ease-out; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Toast -->
+    <div id="toast" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-white text-sm font-medium"></div>
+
+    <!-- Upload error modal -->
+    <div id="upload-error-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+        <div class="bg-white rounded-xl p-6 max-w-sm w-full shadow-xl">
+            <h3 class="text-lg font-semibold text-gray-800 mb-2">图片上传失败</h3>
+            <p id="upload-error-msg" class="text-gray-600 text-sm mb-4"></p>
+            <button id="upload-error-close" class="w-full bg-blue-500 text-white py-2 rounded-lg font-medium">知道了</button>
+        </div>
+    </div>
+
+    <div class="max-w-md mx-auto py-12 px-4">
+        <h1 class="text-2xl font-bold text-center text-gray-800 mb-2">CC-Avatar</h1>
+        <p class="text-center text-gray-500 mb-8">上传照片，生成线条头像</p>
+
+        <!-- Upload Zone -->
+        <div id="upload-zone" class="drop-zone mb-6">
+            <input type="file" id="file-input" accept="image/jpeg,image/png" class="hidden">
+            <div id="upload-placeholder" class="text-gray-400 py-4">
+                <svg class="mx-auto h-12 w-12 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                </svg>
+                <p>点击或拖拽上传照片</p>
+                <p class="text-xs mt-1">支持 JPEG/PNG，最大 10MB</p>
+            </div>
+            <div id="upload-preview" class="hidden">
+                <img id="upload-preview-img" class="w-full max-h-64 object-contain rounded-lg mb-2 mx-auto" alt="已上传的照片预览">
+                <p id="upload-filename" class="text-sm text-green-700 font-medium truncate"></p>
+                <p class="text-xs text-gray-400 mt-1">点击可重新选择照片</p>
+            </div>
+        </div>
+
+        <!-- Model Select -->
+        <div id="model-section" class="mb-6">
+            <label class="block text-sm text-gray-600 mb-1">模型选择</label>
+            <select id="model-select" class="w-full px-3 py-2 border rounded-lg bg-white">
+                <option value="">加载中...</option>
+            </select>
+        </div>
+
+        <!-- Generate Button -->
+        <button id="generate-btn" class="w-full bg-blue-500 text-white py-3 rounded-lg font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+            生成头像
+        </button>
+
+        <!-- Loading -->
+        <div id="loading" class="hidden text-center py-8 fade-in">
+            <div class="spinner mx-auto mb-4"></div>
+            <p id="loading-msg" class="text-gray-700 font-medium">正在生成线条头像...</p>
+            <p class="text-gray-400 text-sm mt-2">通常需要 10–30 秒，请稍候</p>
+        </div>
+
+        <!-- Result -->
+        <div id="result" class="hidden fade-in">
+            <p class="text-green-600 text-center mb-2 font-medium">生成成功！</p>
+            <p id="result-meta" class="text-gray-400 text-xs text-center mb-4"></p>
+            <img id="result-image" class="w-full rounded-lg mb-4 border border-gray-200" alt="生成的线条头像">
+            <button id="download-btn" class="w-full bg-green-500 text-white py-3 rounded-lg font-medium mb-2">
+                下载头像
+            </button>
+            <button id="new-btn" class="w-full bg-gray-100 text-gray-700 py-3 rounded-lg font-medium">
+                重新上传
+            </button>
+        </div>
+
+        <!-- Error -->
+        <div id="error" class="hidden fade-in">
+            <p class="text-red-600 text-center mb-2 font-medium">生成失败</p>
+            <p id="error-msg" class="text-red-500 text-center text-sm mb-4"></p>
+            <button id="retry-btn" class="w-full bg-gray-500 text-white py-3 rounded-lg font-medium">
+                返回重试
+            </button>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('upload-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const uploadPreview = document.getElementById('upload-preview');
+        const uploadPreviewImg = document.getElementById('upload-preview-img');
+        const uploadFilename = document.getElementById('upload-filename');
+        const generateBtn = document.getElementById('generate-btn');
+        const modelSection = document.getElementById('model-section');
+        const loading = document.getElementById('loading');
+        const loadingMsg = document.getElementById('loading-msg');
+        const result = document.getElementById('result');
+        const resultMeta = document.getElementById('result-meta');
+        const error = document.getElementById('error');
+        const modelSelect = document.getElementById('model-select');
+        const resultImage = document.getElementById('result-image');
+        const downloadBtn = document.getElementById('download-btn');
+        const newBtn = document.getElementById('new-btn');
+        const retryBtn = document.getElementById('retry-btn');
+        const toast = document.getElementById('toast');
+        const uploadErrorModal = document.getElementById('upload-error-modal');
+        const uploadErrorMsg = document.getElementById('upload-error-msg');
+        const uploadErrorClose = document.getElementById('upload-error-close');
+
+        let currentImage = null;
+        const errorMsg = document.getElementById('error-msg');
+        const urlParams = new URLSearchParams(window.location.search);
+        let toastTimer = null;
+
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.className = 'show fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-white text-sm font-medium';
+            toast.classList.add(type === 'success' ? 'bg-green-600' : 'bg-blue-600');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.remove('show');
+                toast.classList.add('hidden');
+            }, 2500);
+        }
+
+        function showUploadError(message) {
+            uploadErrorMsg.textContent = message;
+            uploadErrorModal.classList.remove('hidden');
+        }
+
+        uploadErrorClose.addEventListener('click', () => uploadErrorModal.classList.add('hidden'));
+
+        function validateFile(file) {
+            const allowed = ['image/jpeg', 'image/png'];
+            if (!allowed.includes(file.type)) {
+                return '仅支持 JPEG/PNG 格式，当前文件类型：' + (file.type || '未知');
+            }
+            if (file.size > 10 * 1024 * 1024) {
+                return '文件过大，最大 10MB（当前 ' + (file.size / 1024 / 1024).toFixed(1) + 'MB）';
+            }
+            return null;
+        }
+
+        function clearUploadPreview() {
+            uploadPlaceholder.classList.remove('hidden');
+            uploadPreview.classList.add('hidden');
+            uploadPreviewImg.src = '';
+            uploadFilename.textContent = '';
+            dropZone.classList.remove('uploaded');
+            currentImage = null;
+            generateBtn.disabled = true;
+            fileInput.value = '';
+        }
+
+        function showUploadPreview(file, dataUrl) {
+            uploadPlaceholder.classList.add('hidden');
+            uploadPreview.classList.remove('hidden');
+            uploadPreviewImg.src = dataUrl;
+            uploadFilename.textContent = file.name + '（' + (file.size / 1024).toFixed(0) + ' KB）';
+            dropZone.classList.add('uploaded');
+            currentImage = file;
+            generateBtn.disabled = false;
+            showToast('图片上传成功');
+        }
+
+        function handleFile(file) {
+            const validationError = validateFile(file);
+            if (validationError) {
+                showUploadError(validationError);
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = () => showUploadPreview(file, reader.result);
+            reader.onerror = () => showUploadError('图片读取失败，请换一张重试');
+            reader.readAsDataURL(file);
+        }
+
+        async function loadModels() {
+            try {
+                const resp = await fetch('/models');
+                const data = await resp.json();
+                modelSelect.innerHTML = '';
+                const preferred = urlParams.get('model') || data.default;
+                for (const m of data.models) {
+                    const opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.textContent = m.name;
+                    if (m.id === preferred) opt.selected = true;
+                    modelSelect.appendChild(opt);
+                }
+            } catch (e) {
+                modelSelect.innerHTML = '<option value="image-01">MiniMax Image 01</option>';
+            }
+        }
+        loadModels();
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', e => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        });
+
+        function normalizeB64(b64) {
+            if (!b64) return b64;
+            const s = String(b64);
+            if (s.startsWith('data:')) return s.substring(s.indexOf(',') + 1);
+            return s;
+        }
+
+        function toImageSrc(b64) {
+            const raw = normalizeB64(b64);
+            return raw.startsWith('data:') ? raw : 'data:image/png;base64,' + raw;
+        }
+
+        generateBtn.addEventListener('click', async () => {
+            if (!currentImage) return;
+
+            const modelName = modelSelect.options[modelSelect.selectedIndex]?.textContent || modelSelect.value;
+
+            const formData = new FormData();
+            formData.append('file', currentImage);
+            formData.append('model', modelSelect.value);
+
+            generateBtn.classList.add('hidden');
+            modelSection.classList.add('hidden');
+            loading.classList.remove('hidden');
+            loadingMsg.textContent = '正在使用「' + modelName + '」生成线条头像...';
+            result.classList.add('hidden');
+            error.classList.add('hidden');
+
+            try {
+                const resp = await fetch('/generate', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) throw new Error(data.detail || '生成失败');
+
+                resultImage.src = toImageSrc(data.image_base64);
+                const secs = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) : '?';
+                resultMeta.textContent = '模型：' + (data.model_used || modelSelect.value) + ' · 耗时 ' + secs + ' 秒';
+                loading.classList.add('hidden');
+                result.classList.remove('hidden');
+                showToast('线条头像生成成功');
+            } catch (e) {
+                errorMsg.textContent = e.message || '生成失败，请重试';
+                loading.classList.add('hidden');
+                generateBtn.classList.remove('hidden');
+                modelSection.classList.remove('hidden');
+                error.classList.remove('hidden');
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            const link = document.createElement('a');
+            link.download = 'avatar.png';
+            link.href = resultImage.src;
+            link.click();
+            showToast('开始下载', 'info');
+        });
+
+        function reset() {
+            errorMsg.textContent = '';
+            error.classList.add('hidden');
+            result.classList.add('hidden');
+            loading.classList.add('hidden');
+            generateBtn.classList.remove('hidden');
+            modelSection.classList.remove('hidden');
+            clearUploadPreview();
+        }
+
+        retryBtn.addEventListener('click', () => {
+            error.classList.add('hidden');
+            generateBtn.classList.remove('hidden');
+            modelSection.classList.remove('hidden');
+        });
+
+        newBtn.addEventListener('click', reset);
+    </script>
+</body>
+</html>

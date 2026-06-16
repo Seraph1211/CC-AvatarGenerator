@@ -1,0 +1,15 @@
+Create a HAND-DRAWN sketch. You are holding a brush pen, drawing on white paper.
+
+CRITICAL: Output MUST look like a human quick gesture sketch, NOT AI generation.
+- Uneven line weights, slight wobble, natural imperfection
+- Lines NOT perfectly straight or smooth
+- Sketch 3-5 lines for hair shape, 1-2 for volume
+- Face: 2 dots for eyes, 1 tiny nose line, 1 mouth line
+- Shoulders: 1 contour line
+
+CONSTRAINTS:
+- 1:1 square format
+- Pure black ink on white paper only
+- NO shading, NO color, NO gray
+- Under 50 strokes total
+- If it looks too clean or perfect, add more wobble
