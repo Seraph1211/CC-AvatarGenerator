@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from config import MODELS, DEFAULT_MODEL
+from config import MODELS, ACTIVE_MODEL, DEFAULT_MODEL
 from services.generator import generate_avatar
 
 app = FastAPI(title="CC-AvatarGenerator")
@@ -31,20 +31,25 @@ def index():
 
 @app.get("/models")
 def list_models():
-    """List available models."""
+    """List available models. 前端按 platform 分组渲染 dropdown。"""
     return JSONResponse({
         "default": DEFAULT_MODEL,
         "models": [
-            {"id": k, "name": v["name"], "provider": v["provider"]}
+            {
+                "id": k,
+                "name": v.display_name,
+                "platform": v.platform,
+                "provider": v.provider,
+            }
             for k, v in MODELS.items()
-        ]
+        ],
     })
 
 
 @app.post("/generate")
 async def generate(
     file: UploadFile = File(...),
-    model: str = Form(DEFAULT_MODEL),
+    model: str = Form(ACTIVE_MODEL),
 ):
     """Generate avatar from uploaded photo."""
     image_bytes = await file.read()

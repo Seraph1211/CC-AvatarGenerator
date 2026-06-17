@@ -194,12 +194,24 @@
                 const data = await resp.json();
                 modelSelect.innerHTML = '';
                 const preferred = urlParams.get('model') || data.default;
+                // 按 platform 分组渲染为 optgroup,便于按来源查看可选模型
+                const grouped = {};
                 for (const m of data.models) {
-                    const opt = document.createElement('option');
-                    opt.value = m.id;
-                    opt.textContent = m.name;
-                    if (m.id === preferred) opt.selected = true;
-                    modelSelect.appendChild(opt);
+                    const platform = m.platform || '其他';
+                    if (!grouped[platform]) grouped[platform] = [];
+                    grouped[platform].push(m);
+                }
+                for (const [platform, models] of Object.entries(grouped)) {
+                    const group = document.createElement('optgroup');
+                    group.label = platform;
+                    for (const m of models) {
+                        const opt = document.createElement('option');
+                        opt.value = m.id;
+                        opt.textContent = m.name;
+                        if (m.id === preferred) opt.selected = true;
+                        group.appendChild(opt);
+                    }
+                    modelSelect.appendChild(group);
                 }
             } catch (e) {
                 modelSelect.innerHTML = '<option value="image-01">MiniMax Image 01</option>';
