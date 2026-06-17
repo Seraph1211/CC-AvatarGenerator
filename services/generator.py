@@ -1,24 +1,19 @@
-"""Avatar generation service.
+"""Avatar generation service — high-level orchestrator.
 
-高阶入口:preprocess → provider → quality gate → 统一返回 dict。
-
-Provider 实现全部在 services/providers/ 包,本文件只负责:
-  1. 组装流水线
-  2. 业务级兜底(OpenRouter ToS 403 → MiniMax image-01-live)
-  3. 兼容老 API 响应格式({"image_base64", "model_used", "duration_ms"})
+调用链：load_prompt → preprocess → make_provider → img2img → quality_check。
+每个环节都是协议无关的，单一职责，便于扩展和测试。
 """
 import json
 import time
+import traceback
+import uuid
 
 from config import ACTIVE_MODEL, get_model
 from services.preprocessor import preprocess_image
-from services.providers import (
-    ImageRequest,
-    ImageResult,
-    OpenRouterToSError,
-    make_provider,
-)
-from services import quality_checker
+from services.providers import make_provider
+from services.providers.base import ImageGenError, ImageRequest, ImageResult
+from services.providers.openrouter import OpenRouterToSError
+from services.quality_checker import passes as quality_passes
 from utils.logger import logger
 
 DEBUG_LOG_PATH = "/Users/seraph/GitHouse/CC-AvatarGenerator/.cursor/debug-c32fda.log"
@@ -46,86 +41,117 @@ def load_prompt(prompt_file: str) -> str:
         return f.read().strip()
 
 
-# ============================================================
-# 公共入口
-# ============================================================
-
-# 兜底链:OpenRouter ToS 403 时回退到的目标模型
-OPENROUTER_FALLBACK_KEY = "image-01-live"
-
-
-def generate_avatar(image_bytes: bytes, model: str = None) -> dict:
-    """Generate line-art avatar from photo.
-
-    流水线:
-      1. 解析 model key → ModelConfig
-      2. 加载 prompt 模板
-      3. 预处理图片(尺寸由 cfg.preprocess_max_dim 控制)
-      4. 实例化 provider 并调用 img2img
-      5. (OpenRouter) ToS 403 时回退到 image-01-live
-      6. 质量门检查(失败抛 QualityCheckFailedError)
-      7. 返回统一 dict 格式
+def generate_avatar(
+    image_bytes: bytes,
+    model_key: str | None = None,
+    request_id: str | None = None,
+) -> ImageResult:
+    """统一入口：preprocess → provider.img2img → quality gate。
 
     Args:
-        image_bytes: 上传图片的原始字节
-        model: MODELS 注册表的 key(可空,空则用 ACTIVE_MODEL)
+        image_bytes: 上传的图片原始字节
+        model_key: 注册表 key（默认 ACTIVE_MODEL）
+        request_id: 关联 ID（默认自动生成 8 字符），用于日志串联一次请求的所有步骤
 
     Returns:
-        dict: {image_base64, model_used, duration_ms}
-            - image_base64: PNG base64 字符串(无 data: 前缀)
-            - model_used: 实际使用的模型 key(发生兜底时为 "原key -> 兜底key")
-            - duration_ms: 端到端耗时
+        ImageResult，包含 image_bytes / model_key / latency_ms / platform 等元信息
+
+    Raises:
+        ImageGenError: provider 调用失败或质量门未通过
+        OpenRouterToSError: 已捕获并兜底，不应冒泡
     """
-    model_key = model or ACTIVE_MODEL
-    cfg = get_model(model_key)
+    rid = request_id or uuid.uuid4().hex[:8]
+    key = model_key or ACTIVE_MODEL
+    cfg = get_model(key)
+    t_start = time.time()
 
+    logger.info(
+        f"[{rid}] request.start | model_key={key} | provider={cfg.provider} | "
+        f"platform={cfg.platform} | file_size_in={len(image_bytes)} | "
+        f"preprocess_dim={cfg.preprocess_max_dim} | prompt_file={cfg.prompt_file}"
+    )
+
+    # 1. 加载 prompt
+    t1 = time.time()
     prompt = load_prompt(cfg.prompt_file)
+    logger.info(f"[{rid}] prompt.loaded | file={cfg.prompt_file} | len={len(prompt)} | dur={_ms(t1)}ms")
+
+    # 2. 预处理
+    t2 = time.time()
     preprocessed = preprocess_image(image_bytes, max_dim=cfg.preprocess_max_dim)
-
     logger.info(
-        f"[generate] start | model_key={model_key} | platform={cfg.platform} | "
-        f"provider={cfg.provider} | max_dim={cfg.preprocess_max_dim}"
+        f"[{rid}] preprocess.done | in={len(image_bytes)}B → out={len(preprocessed)}B | "
+        f"target_dim={cfg.preprocess_max_dim} | dur={_ms(t2)}ms"
     )
-    start = time.time()
 
-    req = ImageRequest(prompt=prompt, image=preprocessed)
+    # 3. 构造 provider + 发送请求
     provider = make_provider(cfg)
+    request = ImageRequest(prompt=prompt, image=preprocessed)
 
+    t3 = time.time()
     try:
-        result = provider.img2img(req)
+        result = provider.img2img(request)
     except OpenRouterToSError as e:
-        # OpenRouter 上游 provider 以 ToS 拒绝,自动回退到 image-01-live
-        logger.warning(f"[generate] OpenRouter ToS blocked, fallback to {OPENROUTER_FALLBACK_KEY}: {e}")
+        # OpenRouter 服务端 ToS 拦截——按业务规则兜底到 image-01-live
         _dbg(
-            "openrouter-post-fix",
-            "H5",
-            "generator.py:generate_avatar:fallback",
-            "openrouter blocked, fallback to minimax",
-            {
-                "requested_model_key": model_key,
-                "fallback_model_key": OPENROUTER_FALLBACK_KEY,
-            },
+            rid, "H5", "generator.py:generate_avatar:fallback",
+            "openrouter blocked by ToS, fallback to image-01-live",
+            {"requested_model": key},
         )
-        fallback_cfg = get_model(OPENROUTER_FALLBACK_KEY)
-        fallback_provider = make_provider(fallback_cfg)
-        result = fallback_provider.img2img(req)
-        model_key = f"{model_key} -> {OPENROUTER_FALLBACK_KEY}"
-
-    if not quality_checker.passes(result):
-        raise RuntimeError(
-            f"Quality check failed for {result.provider}/{result.model_id} "
-            f"(platform={result.platform}, latency={result.latency_ms}ms). "
-            f"Result discarded."
+        logger.warning(f"[{rid}] fallback.trigger | reason=openrouter_tos | {key} → image-01-live")
+        fallback = get_model("image-01-live")
+        fallback_provider = make_provider(fallback)
+        t_fb = time.time()
+        result = fallback_provider.img2img(request)
+        logger.info(
+            f"[{rid}] fallback.request.done | model=image-01-live | "
+            f"latency={result.latency_ms}ms | dur_total={_ms(t_fb)}ms"
         )
+        result.model_key = f"{key} -> image-01-live"
+        result.model_id = fallback.model_id
+    except ImageGenError as e:
+        logger.error(
+            f"[{rid}] provider.error | type=ImageGenError | provider={e.provider} | "
+            f"model_id={e.model_id} | platform={e.platform} | msg={e} | dur={_ms(t3)}ms"
+        )
+        raise
+    except Exception as e:
+        logger.error(
+            f"[{rid}] request.error | type={type(e).__name__} | msg={e} | dur={_ms(t3)}ms\n"
+            f"{traceback.format_exc()}"
+        )
+        raise ImageGenError(
+            f"Unexpected error: {e}",
+            provider=cfg.provider, model_id=cfg.model_id, platform=cfg.platform,
+        ) from e
 
-    duration_ms = int((time.time() - start) * 1000)
     logger.info(
-        f"[generate] done | model_key={model_key} | "
-        f"latency={result.latency_ms}ms | total={duration_ms}ms"
+        f"[{rid}] provider.done | provider={result.provider} | model_id={result.model_id} | "
+        f"latency={result.latency_ms}ms | bytes={len(result.image_bytes)} | dur={_ms(t3)}ms"
     )
 
-    return {
-        "image_base64": result.to_base64(),
-        "model_used": model_key,
-        "duration_ms": duration_ms,
-    }
+    # 设置 model_key 供上层使用
+    if not result.model_key:
+        result.model_key = key
+
+    # 4. 质量门
+    t4 = time.time()
+    qc_ok = quality_passes(result.image_bytes)
+    logger.info(f"[{rid}] quality_check.done | passed={qc_ok} | dur={_ms(t4)}ms")
+    if not qc_ok:
+        raise ImageGenError(
+            "Generated image failed quality check",
+            provider=result.provider, model_id=result.model_id, platform=result.platform,
+        )
+
+    logger.info(
+        f"[{rid}] request.success | model_key={result.model_key} | "
+        f"provider_latency={result.latency_ms}ms | total_dur={_ms(t_start)}ms | "
+        f"bytes={len(result.image_bytes)}"
+    )
+    return result
+
+
+def _ms(start: float) -> int:
+    """毫秒差，结构化日志用。"""
+    return int((time.time() - start) * 1000)

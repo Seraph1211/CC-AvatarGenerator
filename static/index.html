@@ -69,7 +69,7 @@
         <div id="loading" class="hidden text-center py-8 fade-in">
             <div class="spinner mx-auto mb-4"></div>
             <p id="loading-msg" class="text-gray-700 font-medium">正在生成线条头像...</p>
-            <p class="text-gray-400 text-sm mt-2">通常需要 10–30 秒，请稍候</p>
+            <p class="text-gray-400 text-sm mt-2">通常需要 2~3 分钟，请稍候</p>
         </div>
 
         <!-- Result -->
@@ -123,6 +123,8 @@
         const errorMsg = document.getElementById('error-msg');
         const urlParams = new URLSearchParams(window.location.search);
         let toastTimer = null;
+        // 模型选择 UI 是否启用——由 /models.enabled 决定，关闭后整段业务流不再出现模型信息
+        let isModelSelectEnabled = true;
 
         function showToast(message, type = 'success') {
             toast.textContent = message;
@@ -192,32 +194,81 @@
             try {
                 const resp = await fetch('/models');
                 const data = await resp.json();
+                // 开关关闭或模型列表为空 → 整段模型选择区隐藏，业务流不再出现模型信息
+                isModelSelectEnabled = data.enabled === true
+                    && Array.isArray(data.models) && data.models.length > 0;
+
+                if (!isModelSelectEnabled) {
+                    modelSection.classList.add('hidden');
+                    return;
+                }
+
                 modelSelect.innerHTML = '';
                 const preferred = urlParams.get('model') || data.default;
-                // 按 platform 分组渲染为 optgroup,便于按来源查看可选模型
-                const grouped = {};
+                // 扁平列表——按 display_name 顺序展示，不分组
                 for (const m of data.models) {
-                    const platform = m.platform || '其他';
-                    if (!grouped[platform]) grouped[platform] = [];
-                    grouped[platform].push(m);
-                }
-                for (const [platform, models] of Object.entries(grouped)) {
-                    const group = document.createElement('optgroup');
-                    group.label = platform;
-                    for (const m of models) {
-                        const opt = document.createElement('option');
-                        opt.value = m.id;
-                        opt.textContent = m.name;
-                        if (m.id === preferred) opt.selected = true;
-                        group.appendChild(opt);
-                    }
-                    modelSelect.appendChild(group);
+                    const opt = document.createElement('option');
+                    opt.value = m.id;
+                    opt.textContent = m.name;
+                    if (m.id === preferred) opt.selected = true;
+                    modelSelect.appendChild(opt);
                 }
             } catch (e) {
-                modelSelect.innerHTML = '<option value="image-01">MiniMax Image 01</option>';
+                // 失败时按"开关关闭"处理——隐藏选择区，让后端兜底
+                isModelSelectEnabled = false;
+                modelSection.classList.add('hidden');
             }
         }
         loadModels();
+
+        // ============================================================
+        // 提示音——成功/失败播放不同频率 beep
+        // ============================================================
+        // 浏览器要求 AudioContext 必须在用户交互后启动。第一次点"生成"时 unlock。
+        let audioCtx = null;
+        function ensureAudioContext() {
+            if (!audioCtx) {
+                try {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    audioCtx = null;
+                }
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            return audioCtx;
+        }
+
+        function playBeep(success = true) {
+            const ctx = ensureAudioContext();
+            if (!ctx) return;
+            try {
+                if (success) {
+                    // 成功：800Hz 单声，柔和 sine
+                    _beep(ctx, 800, 'sine', 0.25, 0.35);
+                } else {
+                    // 失败：400Hz 双声，尖锐 square
+                    _beep(ctx, 400, 'square', 0.2, 0.18);
+                    setTimeout(() => _beep(ctx, 400, 'square', 0.2, 0.18), 280);
+                }
+            } catch (e) {
+                // 浏览器策略阻断时静默忽略——toast 已经能提示
+            }
+        }
+
+        function _beep(ctx, freq, type, gainValue, duration) {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = freq;
+            osc.type = type;
+            gain.gain.setValueAtTime(gainValue, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+            osc.start();
+            osc.stop(ctx.currentTime + duration);
+        }
 
         dropZone.addEventListener('click', () => fileInput.click());
         dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -246,16 +297,24 @@
         generateBtn.addEventListener('click', async () => {
             if (!currentImage) return;
 
-            const modelName = modelSelect.options[modelSelect.selectedIndex]?.textContent || modelSelect.value;
+            const modelName = isModelSelectEnabled
+                ? (modelSelect.options[modelSelect.selectedIndex]?.textContent || modelSelect.value)
+                : '';
 
             const formData = new FormData();
             formData.append('file', currentImage);
-            formData.append('model', modelSelect.value);
+            if (isModelSelectEnabled) {
+                formData.append('model', modelSelect.value);
+            }
 
             generateBtn.classList.add('hidden');
-            modelSection.classList.add('hidden');
+            if (isModelSelectEnabled) {
+                modelSection.classList.add('hidden');
+            }
             loading.classList.remove('hidden');
-            loadingMsg.textContent = '正在使用「' + modelName + '」生成线条头像...';
+            loadingMsg.textContent = isModelSelectEnabled
+                ? '正在使用「' + modelName + '」生成线条头像...'
+                : '正在生成线条头像...';
             result.classList.add('hidden');
             error.classList.add('hidden');
 
@@ -270,16 +329,25 @@
 
                 resultImage.src = toImageSrc(data.image_base64);
                 const secs = data.duration_ms ? (data.duration_ms / 1000).toFixed(1) : '?';
-                resultMeta.textContent = '模型：' + (data.model_used || modelSelect.value) + ' · 耗时 ' + secs + ' 秒';
+                if (isModelSelectEnabled) {
+                    const modelLabel = data.display_name || data.model_used || modelSelect.value;
+                    resultMeta.textContent = '模型：' + modelLabel + ' · 耗时 ' + secs + ' 秒';
+                } else {
+                    resultMeta.textContent = '耗时 ' + secs + ' 秒';
+                }
                 loading.classList.add('hidden');
                 result.classList.remove('hidden');
                 showToast('线条头像生成成功');
+                playBeep(true);
             } catch (e) {
                 errorMsg.textContent = e.message || '生成失败，请重试';
                 loading.classList.add('hidden');
                 generateBtn.classList.remove('hidden');
-                modelSection.classList.remove('hidden');
+                if (isModelSelectEnabled) {
+                    modelSection.classList.remove('hidden');
+                }
                 error.classList.remove('hidden');
+                playBeep(false);
             }
         });
 
@@ -297,14 +365,18 @@
             result.classList.add('hidden');
             loading.classList.add('hidden');
             generateBtn.classList.remove('hidden');
-            modelSection.classList.remove('hidden');
+            if (isModelSelectEnabled) {
+                modelSection.classList.remove('hidden');
+            }
             clearUploadPreview();
         }
 
         retryBtn.addEventListener('click', () => {
             error.classList.add('hidden');
             generateBtn.classList.remove('hidden');
-            modelSection.classList.remove('hidden');
+            if (isModelSelectEnabled) {
+                modelSection.classList.remove('hidden');
+            }
         });
 
         newBtn.addEventListener('click', reset);

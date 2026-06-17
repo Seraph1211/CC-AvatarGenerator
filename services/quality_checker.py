@@ -1,38 +1,28 @@
-"""输出质量门:对 provider 返回的图片做基本可用性检查。
+"""输出质量门——对生成结果做最低限度校验。
 
-MVP 阶段:placeholder 实现,只做最基础的全白/全黑检测。
-后续迭代会加入:边缘密度、颜色分布、人脸检测等更严格的检查,
-并把结果记录到监控里(post-MVP 阶段)。
+MVP 阶段先用占位实现：单图直接通过。
+post-MVP 接入 blank detection / edge density / color distribution 三档检查。
 """
-from .providers.base import ImageResult
+import io
+
+from PIL import Image
 
 
-def passes(result: ImageResult) -> bool:
-    """质量门主入口。返回 True 表示通过,False 表示该结果应被丢弃/重试。
+def passes(image_bytes: bytes) -> bool:
+    """检查生成的图片是否满足最低质量要求。
 
-    当前规则:
-      1. 图片尺寸非零
-      2. 不是几乎纯白/纯黑(全空或全黑失败)
+    占位实现：能成功解码为 RGB 即视为通过。
+    后续可在此加：
+      - 空白检测（直方图过于平坦）
+      - 边缘密度（生成图几乎是纯色说明失败）
+      - 颜色分布（必须包含黑/白/灰三段才能算线稿）
 
-    真正的指标(边缘密度、颜色分布、人脸检测)在 post-MVP 阶段接入。
+    Returns:
+        True 通过；False 不通过
     """
-    img_bytes = result.image_bytes
-    if not img_bytes or len(img_bytes) < 100:
-        return False
-
     try:
-        from PIL import Image
-        import io
-        img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+        img = Image.open(io.BytesIO(image_bytes))
+        img.convert("RGB")
+        return True
     except Exception:
-        # 无法解码的图片直接判失败
         return False
-
-    # 极端情况检测:全白/全黑通常意味着生成失败
-    extrema = img.getextrema()
-    # extrema 是 ((rmin, rmax), (gmin, gmax), (bmin, bmax))
-    if all(rmax - rmin < 5 for rmin, rmax in extrema):
-        # RGB 三个通道几乎没变化 → 单色图
-        return False
-
-    return True

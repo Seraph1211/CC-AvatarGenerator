@@ -1,43 +1,34 @@
-"""图片预处理:把上传的照片归一化为 provider 一致期望的输入。"""
+"""输入图片归一化。
+
+将上传的照片转为所有 provider 一致能接受的输入格式：
+默认 1024×1024 RGBA PNG，pad-to-square 保比例，背景白。
+不同模型可由 model_config.preprocess_max_dim 覆盖（测试用 512 减少上传体积）。
+"""
 import io
+
 from PIL import Image
 
-# 默认输出尺寸:1024×1024 pad-to-square RGBA PNG。
-# 多数 provider(GPT Image 系列、Midjourney、SDXL 等)期望方形输入。
-DEFAULT_MAX_DIM = 1024
-DEFAULT_MODE = "RGBA"
-DEFAULT_FILL = (255, 255, 255, 255)   # 纯白填充
 
+def preprocess_image(image_bytes: bytes, max_dim: int = 1024) -> bytes:
+    """将上传的图片归一化为 max_dim×max_dim RGBA PNG bytes。
 
-def preprocess_image(
-    image_bytes: bytes,
-    max_dim: int = DEFAULT_MAX_DIM,
-    mode: str = DEFAULT_MODE,
-    fill: tuple = DEFAULT_FILL,
-) -> bytes:
-    """把任意尺寸/格式的输入图片归一化为 max_dim×max_dim 的 PNG 字节流。
-
-    流程:
-      1. 打开图片,转 RGBA(去 alpha 通道差异)
-      2. thumbnail 保持比例缩放到 max_dim 以内
-      3. paste 到 max_dim×max_dim 的纯白画布居中
-      4. 重新编码为 PNG
+    策略：
+      - 缩放到 max_dim 以内（thumbnail 保持比例）
+      - 居中 paste 到 max_dim×max_dim 白底画布
+      - 重新编码为 PNG
 
     Args:
-        image_bytes: 原始图片字节流(JPEG/PNG/WebP 等,PIL 支持即可)
-        max_dim: 输出画布边长。源图会保持比例缩放到该边长以内再 pad 居中。
-                  测试 gpt-image-2 60s 边界时建议调到 512 缓解上传耗时。
-        mode: 输出颜色模式,默认 RGBA
-        fill: pad 区域填充色,默认纯白不透明
+        image_bytes: 上传的原始图片字节
+        max_dim: 目标边长（默认 1024；测试场景可设 512 减少上游处理耗时）
 
     Returns:
-        PNG 编码后的字节流
+        PNG 格式的 bytes
     """
     img = Image.open(io.BytesIO(image_bytes))
-    if img.mode != mode:
-        img = img.convert(mode)
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
     img.thumbnail((max_dim, max_dim), Image.LANCZOS)
-    canvas = Image.new(mode, (max_dim, max_dim), fill)
+    canvas = Image.new("RGBA", (max_dim, max_dim), (255, 255, 255, 255))
     offset = ((max_dim - img.width) // 2, (max_dim - img.height) // 2)
     canvas.paste(img, offset)
     output = io.BytesIO()
