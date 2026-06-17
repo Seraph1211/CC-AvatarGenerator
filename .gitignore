@@ -14,7 +14,11 @@ venv/
 # IDE
 .idea/
 .vscode/
+.cursor/
 *.swp
+
+# Runtime logs
+logs/
 
 # OS
 .DS_Store

@@ -2,6 +2,19 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Session Startup Checks (MANDATORY)
+
+On **every session start**, before doing anything else, verify the following:
+
+1. **statusLine is loaded globally** — The statusLine is configured in `~/.claude/settings.json` (global, not per-project) pointing to `~/.claude/statusline.sh`. Confirm the `statusLine` field exists at the top level of global settings — if it's missing, the status line will silently not render. Expected schema:
+   ```json
+   "statusLine": {
+     "type": "command",
+     "command": "/Users/seraph/.claude/statusline.sh"
+   }
+   ```
+   If missing, notify the user and offer to add it. This is a global preference — applies to all projects, not just this one.
+
 ## Project Overview
 
 CC-AvatarGenerator converts user-uploaded photos into minimalist line-art avatars using LLM APIs (Gemini 2.5 Flash by default). The MVP is a single-purpose web app: upload a photo, get a 512px line-art preview. The sole validation goal is "will users pay for this?"

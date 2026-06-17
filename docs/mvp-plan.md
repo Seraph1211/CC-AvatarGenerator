@@ -36,6 +36,7 @@
 | 后端框架 | FastAPI (Python 3.11+) | 轻量、异步、适合产品基础 |
 | 前端 | 纯 HTML + Tailwind CSS CDN + 原生 JS | 零构建工具，天然响应式，后续 H5 可复用 |
 | MVP 测试模型 | `image-01`（MiniMax 图生图） | 国内可充值，subject_reference 图生图，先跑通全流程 |
+| 对比模型 | `image-01-live`（MiniMax 带画风） | ¥0.025/张，漫画/元气/中世纪/水彩风格可选 |
 | 对比模型 | `gpt-image-1`（Requesty images.edit） | 原生 img2img，输出稳定，备用对比 |
 | Prompt 切换 | `MODELS[].prompt_file` | 每个模型绑定独立 prompt 文件，切换模型即切换 prompt |
 | 图像处理 | Pillow | 只用于 resize，inline 在 generator.py |
