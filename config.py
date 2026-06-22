@@ -150,7 +150,7 @@ MODELS: dict[str, ModelConfig] = {
 # Active model selection
 # ============================================================
 
-ACTIVE_MODEL = os.getenv("ACTIVE_MODEL", "image-01")
+ACTIVE_MODEL = os.getenv("ACTIVE_MODEL", "GPT-Image-2")
 # 保留旧名 DEFAULT_MODEL 作为别名，避免引用方修改
 DEFAULT_MODEL = ACTIVE_MODEL
 
